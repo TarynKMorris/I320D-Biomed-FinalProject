@@ -3,6 +3,7 @@
 #  Code based on class code for CS 313 E
 
 import matplotlib.pyplot as plt
+import numpy as np
 import networkx as nx
 
 class Vertex (object):
@@ -11,6 +12,7 @@ class Vertex (object):
     self.threshold = threshold
     self.label = label
     self.isvisible = False
+    self.check_visibility()
 
   # determine the label of the vertex
   def get_label (self):
@@ -25,29 +27,37 @@ class Vertex (object):
   def check_visibility (self):
     if self.discontent >= self.threshold:
       self.isvisible = True
-    print("Checked Visibility")
+    #print("Checked Visibility")
 
   # string representation of the vertex
   def __str__ (self):
-    info = f"{self.label}: {self.discontent}/{self.threshold}"
+    info = f"{self.label}: {self.discontent:.0f}/{self.threshold:.0f}"
+    if self.isvisible:
+      info = "(" + info + ")"
     return info
   
+def create_test_nw():
+  base_discontent = 5 * np.random.randn(14) + 10
+  threshold = 10 * np.random.randn(14) + 20
+  labels = ['Node' + str(i) for i in range(14)]
+  verticies = [Vertex(label,d,t) for label, d, t in zip(labels,base_discontent,threshold)]
+  #print('num:', len(labels), len(base_discontent), len(threshold))
+  nw = nx.Graph()
+  nw.add_nodes_from(verticies)
+  return nw
 
 def main():
   print('Start')
-  G = nx.petersen_graph()
-  subax1 = plt.subplot(121)
-  nx.draw(G, with_labels=True, font_weight='bold')
-  subax2 = plt.subplot(122)
-  nx.draw_shell(G, nlist=[range(5, 10), range(5)], with_labels=True, font_weight='bold')
+  nw = create_test_nw()
+  colors = []
+  for node in nw:
+    if node.isvisible:
+      colors.append('red')
+    else:
+      colors.append('blue')
+  nx.draw(nw, node_color = colors,with_labels = True)
   plt.show()
-  network = nx.Graph()
-  node1 = Vertex('friend1', 5, 20)
-  node2 = Vertex('friend2', 10, 20)
-  network.add_edge(node1,node2)
-  nx.draw(network)
-  plt.draw()  # pyplot draw()
-  plt.show()
+    
   print("Finished")
 
 def create_network():
