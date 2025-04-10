@@ -8,6 +8,29 @@ import matplotlib.pyplot as plt
 import numpy as np
 import networkx as nx
 import imageio.v3 as iio
+import os
+import shutil
+
+# From Le Nguyen Le Nguyen Medium article
+#Make helper functions
+def makeGif(networks, name, pos):
+  os.mkdir('frames')
+  try: 
+    counter=0
+    images = []
+    for i in range(0,len(networks)):
+      plt.figure(figsize = (8,8))
+
+      color = get_color(networks[i])
+      nx.draw(networks[i],  node_color = color, pos = pos)
+      plt.savefig("frames/" + str(counter)+ ".png")
+      images.append(iio.imread("frames/" + str(counter)+ ".png"))
+      counter += 1
+      plt.close()
+    print(len(images))
+    iio.imwrite(name, images, loop = 0, duration = .8)
+  finally:
+    shutil.rmtree('frames')
 
 class Network (object):
   def __init__ (self):
@@ -71,9 +94,9 @@ class Network (object):
     # discontent = discontent + weighted average of peers
     visible = [x for x,y in self.G.nodes(data=True) if y['isvisible']]
     for node in visible:
-      print(f"{node} is visible")
+      # print(f"{node} is visible")
       for nbr in self.G[node]:
-        print(f'{nbr} neighbors {node}')
+        # print(f'{nbr} neighbors {node}')
         self.observe_discontent(nbr)
 
 def generate_individial_stats(amt):
@@ -118,12 +141,24 @@ def main():
   network = create_test_nw(100, 3)
   #print(nx.average_neighbor_degree(network.G))
   colors = get_color(network.G)
-  nx.draw(network.G, node_color = colors)
-  plt.show()
-  network.propogate_discontent()
-  colors = get_color(network.G)
-  nx.draw(network.G, node_color = colors)
-  plt.show()
+  pos = nx.kamada_kawai_layout(network.G)
+  # plt.figure(figsize =(10,10))
+  # nx.draw(network.G, node_color = colors, pos = pos)
+  # plt.show()
+  # network.propogate_discontent()
+  # colors = get_color(network.G)
+  # nx.draw(network.G, node_color = colors)
+  # plt.show()
+
+  #Propogate idea
+  visible = []
+  networks = [network.G.copy()]
+  for i in range(0,50):
+    network.propogate_discontent()
+    visible.append(sum(list(dict(network.G.nodes(data="isvisible")).values())))
+    networks.append(network.G.copy())
+  #Save gif
+  makeGif(networks, "contagion.gif", pos)
 
   #freq = nx.degree_histogram(network.G), 
   #plt.boxplot(freq, showmeans= True)
