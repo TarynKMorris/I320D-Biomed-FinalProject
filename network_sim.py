@@ -39,40 +39,46 @@ class Network (object):
   
   def change_discontent(self, index, amt):
     n = self.G.nodes[index]
+    prev_viz = n['isvisible']
     n['discontent'] += amt
     self.check_visibility(index)
+    if prev_viz != n['isvisible']:
+      print(f"{index} is now visible")
 
   # add weighted undirected edge to graph
   def add_undirected_edge (self, start, finish, weight = 1):
     self.G.add_edge(start, finish)
     self.G[start][finish]['weight'] = weight
-
-  # return all vertices adjacent to vertex v (index)
-  def get_adj_vertices (self, v):
-    nVert = len (self.Vertices)
-    adj = []
-    for i in range (nVert):
-      if (self.adjMat[v][i] > 0):
-        adj.append(i)
-    if len(adj) != 0:
-      return adj
-    return -1
   
-  def update_discontent(self, v ):
-    # discontent = discontent + weighted average of peers
-    nVert = len (self.Vertices)
+  def observe_discontent(self, index):
     peer_discontent = []
-    for i in range (nVert):
-      peer = self.Vertices[i]
-      peer.check_visibility()
-      peer_weight =  self.adjMat[v][i]
-      if peer_weight > 0 and peer.isvisible:
-        influence = self.adjMat[v][i] * peer.discontent
-        peer.append(influence) 
+    for nbr_idx in self.G[index]:
+      nbr = self.G.nodes[nbr_idx]
+      #print(node, nx.get_node_attributes(self.G, node))
+      if nbr['isvisible']:
+        #print(nbr, nbr['discontent'],nbr['threshold'])
+        influence = nbr['discontent'] * self.G[index][nbr_idx]['weight']
+        peer_discontent.append(influence)
+    if len(peer_discontent) >= 1:
+      avg_discontent = np.mean(peer_discontent)
+      #print("Avg discontent", f"{avg_discontent:.0f}")
+      #print(self.G.nodes[index]['discontent'])
+      self.change_discontent(index, avg_discontent)
+      #print(self.G.nodes[index]['discontent'])
+      
+
+  def propogate_discontent(self):
+    # discontent = discontent + weighted average of peers
+    visible = [x for x,y in self.G.nodes(data=True) if y['isvisible']]
+    for node in visible:
+      print(f"{node} is visible")
+      for nbr in self.G[node]:
+        print(f'{nbr} neighbors {node}')
+        self.observe_discontent(nbr)
 
 def generate_individial_stats(amt):
-  base_discontent = 5 * np.random.randn(amt) + 10
-  threshold = 10 * np.random.randn(amt) + 20
+  base_discontent = 10 * np.random.randn(amt) + 5
+  threshold = 10 * np.random.randn(amt) + 30
   return base_discontent, threshold
 
 def create_labels(G):
@@ -114,10 +120,15 @@ def main():
   colors = get_color(network.G)
   nx.draw(network.G, node_color = colors)
   plt.show()
+  network.propogate_discontent()
+  colors = get_color(network.G)
+  nx.draw(network.G, node_color = colors)
+  plt.show()
+
   #freq = nx.degree_histogram(network.G), 
   #plt.boxplot(freq, showmeans= True)
   #plt.show()
-  print(nx.density(network.G))
+  #print(nx.number_of_nodes(network.G)/nx.number_of_edges(network.G))
   print("Finished")
 
 def create_network():
