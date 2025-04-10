@@ -1,46 +1,17 @@
 #  File: network_sim.py
 #  Description: Initializes classes for oop approach to simulating networks
-#  Code based on class code for CS 313 E
+#  Code based on class code for CS 313 E, 
+#  https://medium.com/data-science/simulation-106-modeling-
+#  information-diffusion-and-social-contagion-with-networks-7c1184004889
 
 import matplotlib.pyplot as plt
 import numpy as np
 import networkx as nx
 import imageio.v3 as iio
 
-class Vertex (object):
-  def __init__ (self, label, discontent, threshold):
-    self.discontent = discontent
-    self.threshold = threshold
-    self.label = label
-    self.isvisible = False
-    self.check_visibility()
-
-  # determine the label of the vertex
-  def get_label (self):
-    return self.label
-  
-  # Change level of discontent, check effect on visibility
-  def change_discontent(self, amt):
-    self.discontent += amt
-    self.check_visibility()
-
-  # Check if discontent is visible to others
-  def check_visibility (self):
-    if self.discontent >= self.threshold:
-      self.isvisible = True
-    #print("Checked Visibility")
-
-  # string representation of the vertex
-  def __str__ (self):
-    info = f"{self.label}: {self.discontent:.0f}/{self.threshold:.0f}"
-    if self.isvisible:
-      info = "(" + info + ")"
-    return info
-
-
 class Network (object):
   def __init__ (self):
-    G = nx.DiGraph()
+    G = nx.Graph()
     self.G = G
 
   # check if a vertex is already in the graph
@@ -58,12 +29,18 @@ class Network (object):
                      threshold = t,
                      isvisible = False)
     #print('created')
-    self.check_visibility(self.G.nodes[index])
+    self.check_visibility(index)
 
-  def check_visibility(self, n):
+  def check_visibility(self, index):
+    n = self.G.nodes[index]
     if n['discontent'] >= n['threshold']:
       n['isvisible'] = True
     #print('visibility checked')
+  
+  def change_discontent(self, index, amt):
+    n = self.G.nodes[index]
+    n['discontent'] += amt
+    self.check_visibility(index)
 
   # add weighted undirected edge to graph
   def add_undirected_edge (self, start, finish, weight = 1):
@@ -93,53 +70,54 @@ class Network (object):
         influence = self.adjMat[v][i] * peer.discontent
         peer.append(influence) 
 
-  def print_adj_matrix(self):
-    print("Adjacency matrix:")
-
-    for v in range(len(self.Vertices)):
-      row = ""
-      for i in range(len(self.adjMat[v])):
-        row += str(self.adjMat[v][i])
-      print(row)
-
 def generate_individial_stats(amt):
   base_discontent = 5 * np.random.randn(amt) + 10
   threshold = 10 * np.random.randn(amt) + 20
   return base_discontent, threshold
 
-def create_test_nw():
-  base_discontent, threshold = generate_individial_stats(14)
-  labels = ['Node' + str(i) for i in range(14)]
-  verticies = [Vertex(label,d,t) for label, d, t in zip(labels,base_discontent,threshold)]
-  #print('num:', len(labels), len(base_discontent), len(threshold))
-  nw = nx.Graph()
-  nw.add_nodes_from(verticies)
-  return nw
+def create_labels(G):
+  labels = {}
+  for inx, dict in G.nodes.data(): 
+    labels[inx] = f"{dict['discontent']:.0f}/{dict['threshold']:.0f}"
+  return labels
 
-def get_color(graph):
+def create_test_nw(num_nodes, avg_degree):
+  network = Network()
+  discontent, threshold = generate_individial_stats(num_nodes)
+  for d,t in zip(discontent,threshold):
+    network.add_node(d,t)
+  create_connections(network, avg_degree)
+  return network
+
+def get_color(G):
     color_dict = dict({True:"red",False:"blue"})
-    color = list(dict(graph.nodes(data="isvisible")).values())
+    color = list(dict(G.nodes(data="isvisible")).values())
     color = [color_dict[i] for i in color]
     return color
 
+def create_connections(network,num):
+  nodes = list(network.G.nodes)
+  for i in range(len(nodes) * num):
+    if i == 0: 
+      node1 = nodes[0]
+    else:
+      node1 = np.random.choice(nodes)
+    node2 = np.random.choice(nodes)
+    
+    if node1 != node2:
+      network.add_undirected_edge(node1,node2)
+
 def main():
   print('Start')
-  # nw = create_test_nw()
-  # colors = []
-  # for node in nw:
-  #   if node.isvisible:
-  #     colors.append('red')
-  #   else:
-  #     colors.append('blue')
-  # nx.draw(nw, node_color = colors,with_labels = True)
-  # plt.show()
-  network = Network()
-  discontent, threshold = generate_individial_stats(10)
-  for d,t in zip(discontent,threshold):
-    network.add_node(d,t)
+  network = create_test_nw(100, 3)
+  #print(nx.average_neighbor_degree(network.G))
   colors = get_color(network.G)
   nx.draw(network.G, node_color = colors)
   plt.show()
+  #freq = nx.degree_histogram(network.G), 
+  #plt.boxplot(freq, showmeans= True)
+  #plt.show()
+  print(nx.density(network.G))
   print("Finished")
 
 def create_network():
