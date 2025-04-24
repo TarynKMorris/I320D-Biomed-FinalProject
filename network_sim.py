@@ -32,11 +32,14 @@ def makeGif(networks, name, pos):
     shutil.rmtree('frames')
 
 class Network (object):
-  def __init__ (self, media = 0, media_accuracy = .5, efficacy = .8, homophily = .5):
+  def __init__ (self, media = 0, media_accuracy = .5,
+                 efficacy = .8, homophily = .5,
+                 percieved_cost = 10):
     G = nx.Graph(media = media,
                  media_accuracy = media_accuracy,
                  efficacy = efficacy,
-                 homophily = homophily)
+                 homophily = homophily,
+                 percieved_cost = percieved_cost)
     self.G = G
   
   # Add node
@@ -60,11 +63,12 @@ class Network (object):
   def check_visibility(self, index):
     n = self.G.nodes[index]
     p_protest = ((n['discontent'] 
+                 * self.G.graph['efficacy']
+                 * self.G.graph['homophily'])
                  + (self.get_peers_visible(index)
                  + self.G.graph['media'])/2)
-                 * self.G.graph['efficacy']
-                 ) 
-    threshold = ( n['threshold'] + n['burnout']) * self.G.graph['homophily']
+                 
+    threshold = ( n['threshold'] + n['burnout']) 
     if p_protest >= threshold:
       n['isvisible'] = True
       n['nevervisible'] = False
@@ -88,13 +92,19 @@ class Network (object):
     for index in self.G.nodes:
       node = self.G.nodes[index]
       if node['isvisible']:
-        node['burnout'] += .5
+        node['burnout'] += .1
       else:
-        node['burnout'] -= .05
+        node['burnout'] -= .01
+  
+  def duplicate(self):
+    network = Network()
+    network.G = self.G
+    return network
 
   def media_reporting(self):
     amt_visible = np.mean(list(dict(self.G.nodes(data="isvisible")).values()))
     self.G.graph['media'] = amt_visible * self.G.graph['media_accuracy']
+    print(self.G.graph['media'], amt_visible) 
 
   # Update node discontent based on surroundings
   def get_peers_visible(self, index):
@@ -121,14 +131,14 @@ class Network (object):
       for nbr in self.G[node]:
         # print(f'{nbr} neighbors {node}')
         self.check_visibility(nbr)
-        #print(self.G.nodes[index]['discontent'])   
+        #print(self.G.nodes[index]['discontent'])  
     self.trigger_burnout()
     self.media_reporting()
 
 ######################################
 
 def generate_individial_stats(amt, avg_discontent, avg_threshold):
-  np.random.seed(42)
+  np.random.seed(50)
   base_discontent = .3 * np.random.randn(amt) + avg_discontent
   threshold = .4 * np.random.randn(amt) + avg_threshold
   for i in range(amt):
@@ -140,8 +150,6 @@ def generate_individial_stats(amt, avg_discontent, avg_threshold):
       threshold[i] = 1
     elif threshold[i] < 0:
       threshold[i] = 0
-
-      
   return base_discontent, threshold
 
 def create_labels(G):
@@ -150,9 +158,9 @@ def create_labels(G):
     labels[inx] = f"{dict['discontent']:.0f}/{dict['threshold']:.0f}"
   return labels
 
-def create_test_nw(num_nodes, avg_degree):
+def create_test_nw(num_nodes = 300, avg_degree = 3, avg_discontent = .3, avg_threshold = .8):
   network = Network()
-  discontent, threshold = generate_individial_stats(num_nodes, .2, .8)
+  discontent, threshold = generate_individial_stats(num_nodes, avg_discontent, avg_threshold)
   for d,t in zip(discontent,threshold):
     network.add_node(d,t)
   create_connections(network, avg_degree)
@@ -165,7 +173,7 @@ def get_color(G):
     return color
 
 def create_connections(network,num):
-  np.random.seed(42)
+  np.random.seed(50)
   nodes = list(network.G.nodes)
   for i in range(len(nodes) * num):
     if i == 0: 
@@ -177,28 +185,19 @@ def create_connections(network,num):
     if node1 != node2:
       network.add_undirected_edge(node1,node2)
 
-def sample_project(num_nodes, avg_deg):
-  network = create_test_nw(num_nodes, avg_deg)
-  network.G.nodes[0]['isvisible'] = True
-  colors = get_color(network.G)
-  pos = nx.kamada_kawai_layout(network.G)
 
+def run_sim(network):
   #Propogate idea
   visible = []
-  recovered = []
-  invisible = []
   lapsed = []
-  abstain = []
   networks = [network.G.copy()]
-  for i in range(0,40):
+
+  for i in range(0,60):
     network.propogate_discontent()
     n_visible = sum(list(dict(network.G.nodes(data="isvisible")).values()))
     n_lapsed = sum(list(dict(network.G.nodes(data="islapsed")).values()))
-    n_abstain = sum(list(dict(network.G.nodes(data="nevervisible")).values()))
     visible.append(n_visible)
     lapsed.append(n_lapsed)
-    abstain.append(n_abstain)
-    invisible.append(num_nodes - n_visible)
     networks.append(network.G.copy())
   
   # Save gif
@@ -216,7 +215,37 @@ def sample_project(num_nodes, avg_deg):
 
 def main():
   print('Start')
-  sample_project(500, 6)
+  network = create_test_nw(500, 12, avg_threshold=.8)
+  network.G.nodes[0]['isvisible'] = True
+  pos = nx.kamada_kawai_layout(network.G) 
+  network.G.graph['media_accuracy'] = .5
+
+  visible = []
+  lapsed = []
+  networks = [network.G.copy()]
+
+  for i in range(0,60):
+    network.propogate_discontent()
+    n_visible = sum(list(dict(network.G.nodes(data="isvisible")).values()))
+    n_lapsed = sum(list(dict(network.G.nodes(data="islapsed")).values()))
+    visible.append(n_visible)
+    lapsed.append(n_lapsed)
+    networks.append(network.G.copy())
+  
+  # Save gif
+  makeGif(networks, "contagion.gif", pos)
+
+  # Plot contagion curve
+  plt.figure()
+  t = np.arange(0,len(visible),1)
+  plt.stackplot(t,visible, lapsed, labels= ('Visible', 'Lapsed'))
+  #plt.plot(t,abstain)
+  plt.xlabel("Time")
+  plt.ylabel("Visibly Discontent Members")
+  plt.ylim(top = 500)
+  plt.title("Discontent Contagion Curve")
+  plt.legend()
+  plt.show()
   print("Finished")
 
 if __name__ == "__main__":
