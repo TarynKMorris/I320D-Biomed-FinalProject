@@ -32,25 +32,24 @@ def makeGif(networks, name, pos):
     shutil.rmtree('frames')
 
 class Network (object):
-  def __init__ (self, media_influence = 0, efficacy = .8):
-    G = nx.Graph(media_influence = media_influence,
-                 efficacy = efficacy)
+  def __init__ (self, media = 0, media_accuracy = .5, efficacy = .8, homophily = .5):
+    G = nx.Graph(media = media,
+                 media_accuracy = media_accuracy,
+                 efficacy = efficacy,
+                 homophily = homophily)
     self.G = G
   
   # Add node
-  def add_node(self,d,t,b = 0,r = 0, h = .5):
+  def add_node(self,d,t,b = 0,r = 0):
     index = len(self.G.nodes)
     self.G.add_node(index,
                      discontent = d,
                      threshold = t,
                      burnout = b,
                      resistance = r,
-                     homophily = h,
                      isvisible = False,
-                     islapsed = False)
-    if self.check_visibility(index):
-      self.G.nodes[index]["isvisible"] = True
-      self.G.nodes[index]["islapsed"] = True
+                     islapsed = False,
+                     nevervisible = True)
 
   # add weighted undirected edge to graph
   def add_undirected_edge (self, start, finish, weight = 1):
@@ -61,13 +60,19 @@ class Network (object):
   def check_visibility(self, index):
     n = self.G.nodes[index]
     p_protest = ((n['discontent'] 
-                 + self.get_peers_visible(index))
-                 * self.G.graph['efficacy'])
-    threshold = ( n['threshold'] + n['burnout'])
+                 + (self.get_peers_visible(index)
+                 + self.G.graph['media'])/2)
+                 * self.G.graph['efficacy']
+                 ) 
+    threshold = ( n['threshold'] + n['burnout']) * self.G.graph['homophily']
     if p_protest >= threshold:
-      return True
+      n['isvisible'] = True
+      n['nevervisible'] = False
+      n['islapsed'] = False
     else:
-      return False
+      if n['isvisible'] == True:
+        n['islapsed'] = True
+      n['isvisible'] = False
     #print('visibility checked')
   
   # change discontent of node
@@ -83,14 +88,13 @@ class Network (object):
     for index in self.G.nodes:
       node = self.G.nodes[index]
       if node['isvisible']:
-        node['burnout'] += .2
+        node['burnout'] += .5
       else:
         node['burnout'] -= .05
 
-  def simulate_exhaustion(self):
-    # method to simulate people un-becoming visibly discontent?
-    # Exhausted bool? If exhausted, no longer affects others?
-    print("Not set up")
+  def media_reporting(self):
+    amt_visible = np.mean(list(dict(self.G.nodes(data="isvisible")).values()))
+    self.G.graph['media'] = amt_visible * self.G.graph['media_accuracy']
 
   # Update node discontent based on surroundings
   def get_peers_visible(self, index):
@@ -112,30 +116,21 @@ class Network (object):
   def propogate_discontent(self):
     # discontent = discontent + weighted average of peers
     visible = [x for x,y in self.G.nodes(data=True) if y['isvisible']]
-    results = []
     for node in visible:
       # print(f"{node} is visible")
       for nbr in self.G[node]:
         # print(f'{nbr} neighbors {node}')
-        results.append((nbr, self.check_visibility(nbr)))
+        self.check_visibility(nbr)
         #print(self.G.nodes[index]['discontent'])   
     self.trigger_burnout()
-    for i, res in results:
-      n = self.G.nodes[i]
-      if res:
-        if n['isvisible'] == False:
-          n['islapsed'] = False
-        else:
-          n['islapsed'] = True
-      n['isvisible'] = res
-
+    self.media_reporting()
 
 ######################################
 
 def generate_individial_stats(amt, avg_discontent, avg_threshold):
   np.random.seed(42)
   base_discontent = .3 * np.random.randn(amt) + avg_discontent
-  threshold = .1 * np.random.randn(amt) + avg_threshold
+  threshold = .4 * np.random.randn(amt) + avg_threshold
   for i in range(amt):
     if base_discontent[i] > 1:
       base_discontent[i] = 1
@@ -157,7 +152,7 @@ def create_labels(G):
 
 def create_test_nw(num_nodes, avg_degree):
   network = Network()
-  discontent, threshold = generate_individial_stats(50, .3, .8)
+  discontent, threshold = generate_individial_stats(num_nodes, .2, .8)
   for d,t in zip(discontent,threshold):
     network.add_node(d,t)
   create_connections(network, avg_degree)
@@ -182,9 +177,8 @@ def create_connections(network,num):
     if node1 != node2:
       network.add_undirected_edge(node1,node2)
 
-def sample_project():
-  network = create_test_nw(500, 4)
-  network.G.nodes[0]['islapsed'] = True
+def sample_project(num_nodes, avg_deg):
+  network = create_test_nw(num_nodes, avg_deg)
   network.G.nodes[0]['isvisible'] = True
   colors = get_color(network.G)
   pos = nx.kamada_kawai_layout(network.G)
@@ -194,15 +188,17 @@ def sample_project():
   recovered = []
   invisible = []
   lapsed = []
+  abstain = []
   networks = [network.G.copy()]
-  for i in range(0,50):
+  for i in range(0,40):
     network.propogate_discontent()
-    print(list(dict(network.G.nodes(data="isvisible")).values()))
     n_visible = sum(list(dict(network.G.nodes(data="isvisible")).values()))
     n_lapsed = sum(list(dict(network.G.nodes(data="islapsed")).values()))
+    n_abstain = sum(list(dict(network.G.nodes(data="nevervisible")).values()))
     visible.append(n_visible)
     lapsed.append(n_lapsed)
-    invisible.append(500 - n_visible)
+    abstain.append(n_abstain)
+    invisible.append(num_nodes - n_visible)
     networks.append(network.G.copy())
   
   # Save gif
@@ -211,10 +207,8 @@ def sample_project():
   # Plot contagion curve
   plt.figure()
   t = np.arange(0,len(visible),1)
-  plt.plot(t, lapsed, label = "lapsed")
-  plt.plot(t,visible, label = "Visibly discontent")
-  plt.legend()
-  #plt.plot(t,invisible)
+  plt.stackplot(t,visible, lapsed)
+  #plt.plot(t,abstain)
   plt.xlabel("Time")
   plt.ylabel("Visibly Discontent Members")
   plt.title("Discontent Contagion Curve")
@@ -222,7 +216,7 @@ def sample_project():
 
 def main():
   print('Start')
-  sample_project()
+  sample_project(500, 6)
   print("Finished")
 
 if __name__ == "__main__":
