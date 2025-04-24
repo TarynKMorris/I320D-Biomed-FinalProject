@@ -32,21 +32,25 @@ def makeGif(networks, name, pos):
     shutil.rmtree('frames')
 
 class Network (object):
-  def __init__ (self, media_influence = 0, efficacy = 0):
+  def __init__ (self, media_influence = 0, efficacy = .8):
     G = nx.Graph(media_influence = media_influence,
                  efficacy = efficacy)
     self.G = G
   
   # Add node
-  def add_node(self,d,t,b = 0,r = 0):
+  def add_node(self,d,t,b = 0,r = 0, h = .5):
     index = len(self.G.nodes)
     self.G.add_node(index,
                      discontent = d,
                      threshold = t,
                      burnout = b,
                      resistance = r,
-                     isvisible = False)
-    self.check_visibility(index)
+                     homophily = h,
+                     isvisible = False,
+                     islapsed = False)
+    if self.check_visibility(index):
+      self.G.nodes[index]["isvisible"] = True
+      self.G.nodes[index]["islapsed"] = True
 
   # add weighted undirected edge to graph
   def add_undirected_edge (self, start, finish, weight = 1):
@@ -56,11 +60,14 @@ class Network (object):
   # Update visibility of node
   def check_visibility(self, index):
     n = self.G.nodes[index]
-    p_protest = ((n['discontent'] - n['threshold']) 
-                 * self.get_peers_visible(index)
-                 * self.G['efficacy'])
-    if n['discontent'] >= n['threshold']:
-      n['isvisible'] = True 
+    p_protest = ((n['discontent'] 
+                 + self.get_peers_visible(index))
+                 * self.G.graph['efficacy'])
+    threshold = ( n['threshold'] + n['burnout'])
+    if p_protest >= threshold:
+      return True
+    else:
+      return False
     #print('visibility checked')
   
   # change discontent of node
@@ -73,9 +80,10 @@ class Network (object):
       # print(f"{index} is now visible")
 
   def trigger_burnout(self):
-    for node in self.G.nodes:
+    for index in self.G.nodes:
+      node = self.G.nodes[index]
       if node['isvisible']:
-        node['burnout'] += .1
+        node['burnout'] += .2
       else:
         node['burnout'] -= .05
 
@@ -94,26 +102,51 @@ class Network (object):
         nbr_visibility.append(True)
       else:
         nbr_visibility.append(False)
-    prop_nbrs_visible = np.average(nbr_visibility)
+    if len(nbr_visibility) >= 1:
+      prop_nbrs_visible = np.average(nbr_visibility)
+    else:
+      prop_nbrs_visible = 0
     return prop_nbrs_visible
 
   # Simulate effect of discontent on neighbors
   def propogate_discontent(self):
     # discontent = discontent + weighted average of peers
     visible = [x for x,y in self.G.nodes(data=True) if y['isvisible']]
+    results = []
     for node in visible:
       # print(f"{node} is visible")
       for nbr in self.G[node]:
         # print(f'{nbr} neighbors {node}')
-        avg_peer_discontent, _  = self.get_peer_discontent(nbr)
-        self.change_discontent(nbr, avg_peer_discontent)
+        results.append((nbr, self.check_visibility(nbr)))
         #print(self.G.nodes[index]['discontent'])   
+    self.trigger_burnout()
+    for i, res in results:
+      n = self.G.nodes[i]
+      if res:
+        if n['isvisible'] == False:
+          n['islapsed'] = False
+        else:
+          n['islapsed'] = True
+      n['isvisible'] = res
+
 
 ######################################
 
-def generate_individial_stats(amt):
-  base_discontent = 5 * np.random.randn(amt) + 10
-  threshold = 10 * np.random.randn(amt) + 50
+def generate_individial_stats(amt, avg_discontent, avg_threshold):
+  np.random.seed(42)
+  base_discontent = .3 * np.random.randn(amt) + avg_discontent
+  threshold = .1 * np.random.randn(amt) + avg_threshold
+  for i in range(amt):
+    if base_discontent[i] > 1:
+      base_discontent[i] = 1
+    elif base_discontent[i] < -1:
+      base_discontent[i] = -1
+    if threshold[i] > 1:
+      threshold[i] = 1
+    elif threshold[i] < 0:
+      threshold[i] = 0
+
+      
   return base_discontent, threshold
 
 def create_labels(G):
@@ -124,7 +157,7 @@ def create_labels(G):
 
 def create_test_nw(num_nodes, avg_degree):
   network = Network()
-  discontent, threshold = generate_individial_stats(num_nodes)
+  discontent, threshold = generate_individial_stats(50, .3, .8)
   for d,t in zip(discontent,threshold):
     network.add_node(d,t)
   create_connections(network, avg_degree)
@@ -137,6 +170,7 @@ def get_color(G):
     return color
 
 def create_connections(network,num):
+  np.random.seed(42)
   nodes = list(network.G.nodes)
   for i in range(len(nodes) * num):
     if i == 0: 
@@ -149,26 +183,38 @@ def create_connections(network,num):
       network.add_undirected_edge(node1,node2)
 
 def sample_project():
-  network = create_test_nw(500, 3)
+  network = create_test_nw(500, 4)
+  network.G.nodes[0]['islapsed'] = True
   network.G.nodes[0]['isvisible'] = True
   colors = get_color(network.G)
   pos = nx.kamada_kawai_layout(network.G)
-  
+
   #Propogate idea
   visible = []
+  recovered = []
+  invisible = []
+  lapsed = []
   networks = [network.G.copy()]
   for i in range(0,50):
     network.propogate_discontent()
-    visible.append(sum(list(dict(network.G.nodes(data="isvisible")).values())))
+    print(list(dict(network.G.nodes(data="isvisible")).values()))
+    n_visible = sum(list(dict(network.G.nodes(data="isvisible")).values()))
+    n_lapsed = sum(list(dict(network.G.nodes(data="islapsed")).values()))
+    visible.append(n_visible)
+    lapsed.append(n_lapsed)
+    invisible.append(500 - n_visible)
     networks.append(network.G.copy())
   
   # Save gif
-  makeGif(networks, "contagion.gif", pos)
+  #makeGif(networks, "contagion.gif", pos)
 
   # Plot contagion curve
   plt.figure()
   t = np.arange(0,len(visible),1)
-  plt.plot(t,visible)
+  plt.plot(t, lapsed, label = "lapsed")
+  plt.plot(t,visible, label = "Visibly discontent")
+  plt.legend()
+  #plt.plot(t,invisible)
   plt.xlabel("Time")
   plt.ylabel("Visibly Discontent Members")
   plt.title("Discontent Contagion Curve")
@@ -176,9 +222,7 @@ def sample_project():
 
 def main():
   print('Start')
-  network = create_test_nw(500, 3)
-  network.G.nodes[0]['isvisible'] = True
-  network.propogate_discontent()
+  sample_project()
   print("Finished")
 
 if __name__ == "__main__":
