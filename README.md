@@ -2,7 +2,7 @@
 
 ---
 
-**Contributors:** Taryn Morris, Shamiya Lin Naomi Ichiriu
+**Contributors:** Taryn Morris, Shamiya Lin, Naomi Ichiriu
 
 School of Information, The University of Texas at Austin
 
