@@ -3,7 +3,9 @@
 ---
 
 **Contributors:** Taryn Morris, Shamiya Lin Naomi Ichiriu
+
 School of Information, The University of Texas at Austin
+
 I 320D: Data Science for Biomedical Informatics
 
 ---
